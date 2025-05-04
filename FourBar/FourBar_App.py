@@ -33,16 +33,16 @@ class MainWindow(Ui_Form, qtw.QWidget):
         self.nud_MaxAngle.setValue(360.0)
         self.nud_MaxAngle.setSuffix("°")
         # ─── build the mass/spring/damping controls ─────────────────────────
-        self.nud_Mass1 = qtw.QDoubleSpinBox(self)
-        self.nud_Mass2 = qtw.QDoubleSpinBox(self)
-        self.nud_Mass3 = qtw.QDoubleSpinBox(self)
-        self.nud_SpringK = qtw.QDoubleSpinBox(self)
-        self.nud_DampC   = qtw.QDoubleSpinBox(self)
-        self.btn_Simulate= qtw.QPushButton("Simulate", self)
+        self.nud_Mass1     = qtw.QDoubleSpinBox(self)
+        self.nud_Mass2     = qtw.QDoubleSpinBox(self)
+        self.nud_Mass3     = qtw.QDoubleSpinBox(self)
+        self.nud_SpringK   = qtw.QDoubleSpinBox(self)
+        self.nud_DampC     = qtw.QDoubleSpinBox(self)
+        self.btn_Simulate  = qtw.QPushButton("Simulate", self)
 
         # configure ranges/defaults
         for nud in (self.nud_Mass1, self.nud_Mass2, self.nud_Mass3):
-            nud.setRange(0.1,  20.0)
+            nud.setRange(0.1, 20.0)
             nud.setValue(1.0)
             nud.setSuffix(" kg")
         self.nud_SpringK.setRange(0.0, 1000.0)
@@ -67,11 +67,12 @@ class MainWindow(Ui_Form, qtw.QWidget):
         self.horizontalLayout.addWidget(self.nud_DampC)
         self.horizontalLayout.addWidget(self.btn_Simulate)
 
-        # wire up clamping and simulation
+        # wire up clamping, simulation, and spring‐constant update
         self.nud_MinAngle.valueChanged.connect(self._clampInputAngle)
         self.nud_MaxAngle.valueChanged.connect(self._clampInputAngle)
         self.btn_Simulate.clicked.connect(self.startSimulation)
-        # ──────────────────────────────────────────────────────────────────
+        # ── ADDED ── connect spring‐constant spin‐box to updater
+        self.nud_SpringK.valueChanged.connect(self._updateSpringConstant)
 
         #region UserInterface stuff here
         widgets = [
@@ -131,13 +132,13 @@ class MainWindow(Ui_Form, qtw.QWidget):
                     self._clampInputAngle()
 
             elif event.type() == qtc.QEvent.GraphicsSceneWheel:
-                if event.delta()>0:
+                if event.delta() > 0:
                     self.spnd_Zoom.stepUp()
                 else:
                     self.spnd_Zoom.stepDown()
 
             elif event.type() == qtc.QEvent.GraphicsSceneMousePress:
-                if event.button()==qtc.Qt.LeftButton:
+                if event.button() == qtc.Qt.LeftButton:
                     self.mouseDown = True
 
             elif event.type() == qtc.QEvent.GraphicsSceneMouseRelease:
@@ -194,7 +195,6 @@ class MainWindow(Ui_Form, qtw.QWidget):
 
         # link lengths
         L1 = self.FBL_C.FBL_M.InputLink.length
-        # —— corrected here: use DragLink, not Coupler ——
         L2 = self.FBL_C.FBL_M.DragLink.length
         L3 = self.FBL_C.FBL_M.OutputLink.length
 
@@ -210,8 +210,8 @@ class MainWindow(Ui_Form, qtw.QWidget):
         ω0   = 0.0
 
         # time span & evaluation points
-        t_max   = 5.0                                        # seconds
-        t_eval  = np.linspace(0, t_max, int(t_max*60))      # 60 Hz sampling
+        t_max   = 5.0                                       # seconds
+        t_eval  = np.linspace(0, t_max, int(t_max*60))     # 60 Hz sampling
 
         # define the state ODE: y = [θ, ω]
         def state_eq(t, y):
@@ -260,6 +260,20 @@ class MainWindow(Ui_Form, qtw.QWidget):
             # re-enable dragging
             self.FBL_C.FBL_V.scene.installEventFilter(self)
     #endregion
+
+    #region === ADDED: spring‐constant updater ===
+    def _updateSpringConstant(self, k_new: float):
+        """
+        Update the model’s spring constant and refresh the view so the label updates.
+        """
+        # set the new stiffness
+        self.FBL_C.FBL_M.Spring.k = k_new
+        # update tooltip in case the Spring class uses it
+        self.FBL_C.FBL_M.Spring.setToolTip(f"k = {k_new:.1f} N·m/rad")
+        # force a repaint so the on‐screen label picks up the new k
+        self.FBL_C.FBL_V.scene.update()
+    #endregion
+
 #endregion
 
 #region function calls
