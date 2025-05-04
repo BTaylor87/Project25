@@ -15,54 +15,45 @@ view caused by a change in state of the model or user interaction with the view 
 """
 #region model and supporting classes
 class RigidLink(qtw.QGraphicsItem):
-    def __init__(self, stX=0, stY=0, enX=1, enY=1, radius=10, mass = 10, parent=None, pen=None, brush=None, name='RigidLink',
+    def __init__(self, stX=0, stY=0, enX=1, enY=1, radius=10, mass=10,
+                 parent=None, pen=None, brush=None, name='RigidLink',
                  label_pen=qtg.QPen(qtc.Qt.black)):
         """
-        This is a custom class for drawing a rigid link.  The paint function executes everytime the scene
-        which holds the link is updated.  The steps to making the link are:
-        1. Specify the pen, brush, start and end x,y coordinates of the link and radius by unpacking arguments
-        2. Compute the length and angle of the link (also sets self.DX, self.DY)
-        3. Compute the rectangle that will contain the link (i.e., its bounding box)
-        4. Setup the transformation that will rotate and then translate the link
-        *Note:  The paint function is called each time the scene changes.  I draw a link aligned with the x-axis first
-        with the start point at 0,0 and end point at length, 0. Then, the path painter draws the centerline and the
-        start and end pivot points, then the start semicircle, a line to the end semicircle, the end semicircle,
-        and a line back to the start semicircle.  Finally, the link is rotated about 0,0 and then translated to startX,
-        startY.  In this way, the bounding rectangle gets transformed and this helps with detecting the item in the
-        graphics view when the mouse hovers.
-
-        :param stX:
-        :param stY:
-        :param enX:
-        :param enY:
-        :param radius:
-        :param mass:
-        :param parent:
-        :param pen:
-        :param brush:
+        This is a custom class for drawing a rigid link.  The paint function executes every time
+        the scene updates.  See header comment in your original for full details.
         """
         super().__init__(parent)
 
-        # step 1
-        self.pen = pen
+        # step 1: store styling & IDs
+        self.pen       = pen
         self.label_pen = label_pen
-        self.brush = brush
-        self.name = name
+        self.brush     = brush
+        self.name      = name
+
+        # step 1: define start/end points
         self.stPt = qtc.QPointF(stX, stY)
         self.enPt = qtc.QPointF(enX, enY)
+        # ─── LEGACY ALIAS ───────────────────────────────────────────────
+        # allow references to .endPt to work exactly like .enPt
+        self.endPt = self.enPt
+        # ────────────────────────────────────────────────────────────────
+
         self.radius = radius
-        self.mass = mass  # I assume the mass is distributed uniformly along the length of the bar.
-        # step 2
+        self.mass   = mass  # assume uniform distribution
+
+        # step 2: compute current angle & length
         self.angle = self.linkAngle()
-        # step 3
-        self.rect = qtc.QRectF(-self.radius, -self.radius, self.length + self.radius, self.radius)
-        # step 4 setup transform
+
+        # step 3: initial bounding rect (will be updated in paint)
+        self.rect = qtc.QRectF(-self.radius, -self.radius,
+                               self.length + self.radius, self.radius)
+
+        # step 4: prepare transform
         self.transform = qtg.QTransform()
         self.transform.reset()
 
     def boundingRect(self):
-        boundingRect = self.transform.mapRect(self.rect)
-        return boundingRect
+        return self.transform.mapRect(self.rect)
 
     def deltaY(self):
         self.DY = self.enPt.y() - self.stPt.y()
@@ -73,102 +64,94 @@ class RigidLink(qtw.QGraphicsItem):
         return self.DX
 
     def linkLength(self):
-        self.length = math.sqrt(math.pow(self.deltaX(), 2) + math.pow(self.deltaY(), 2))
+        self.length = math.hypot(self.deltaX(), self.deltaY())
         return self.length
 
     def linkAngle(self):
         self.linkLength()
-        if self.length == 0.0:
+        if self.length == 0:
             self.angle = 0
         else:
             self.angle = math.acos(self.DX / self.length)
-            self.angle *= -1 if (self.DY > 0) else 1
-        self.rangeAngle()
+            if self.DY > 0:
+                self.angle *= -1
+        # wrap into [0,2π)
+        while self.angle < 0:
+            self.angle += 2 * math.pi
+        while self.angle >= 2 * math.pi:
+            self.angle -= 2 * math.pi
         return self.angle
 
-    def rangeAngle(self):
-        while (self.angle < 0):
-            self.angle += 2 * math.pi
-        while (self.angle > 2 * math.pi):
-            self.angle -= 2 * math.pi
-
     def AngleDeg(self):
-        return self.angle * 180 / math.pi
+        return self.angle * 180.0 / math.pi
 
     def paint(self, painter, option, widget=None):
         """
-        This function creates a path painter the paints a semicircle around the start point (ccw), a straight line
-        offset from the main axis of the link, a semicircle around the end point (ccw), and a straight line offset from
-        the main axis.  It then assigns a pen and brush.  Finally, it draws a circle at the start and end points to
-        indicate the pivot points.
-        :param painter:
-        :param option:
-        :param widget:
-        :return:
+        Draw a semicircle at the start, a centerline, the body of the link, semicircle at the end,
+        pivots, name, and apply the proper rotation + translation.
         """
-        # instantiate a QPainterPath object
         path = qtg.QPainterPath()
-        # compute linkLength from startX, startY, endX, endY
-        len = self.linkLength()
-        # compute the angle of the link from deltaY & deltaX
-        angLink = self.linkAngle() * 180 / math.pi
+        length = self.linkLength()
+        angDeg = self.linkAngle() * 180.0 / math.pi
 
-        # define bounding rectangles for the radiused ends of the link
-        rectSt = qtc.QRectF(-self.radius, -self.radius, 2 * self.radius, 2 * self.radius)
-        rectEn = qtc.QRectF(self.length - self.radius, -self.radius, 2 * self.radius, 2 * self.radius)
+        # bounding circles
+        rectSt = qtc.QRectF(-self.radius, -self.radius,
+                             2*self.radius, 2*self.radius)
+        rectEn = qtc.QRectF(self.length - self.radius, -self.radius,
+                             2*self.radius, 2*self.radius)
 
-        # draw a center line
-        centerLinePen = qtg.QPen()
-        centerLinePen.setStyle(qtc.Qt.DashDotLine)
+        # centerline (dashed)
+        centerPen = qtg.QPen(self.pen.color())
+        centerPen.setStyle(qtc.Qt.DashDotLine)
         r, g, b, a = self.pen.color().getRgb()
-        centerLinePen.setColor(qtg.QColor(r, g, b, 128))
-        centerLinePen.setWidth(1)
-        p1 = qtc.QPointF(0, 0)
-        p2 = qtc.QPointF(len, 0)
-        painter.setPen(centerLinePen)
-        painter.drawLine(p1, p2)
+        centerPen.setColor(qtg.QColor(r, g, b, 128))
+        centerPen.setWidth(1)
+        painter.setPen(centerPen)
+        painter.drawLine(qtc.QPointF(0,0), qtc.QPointF(length,0))
 
-        path.arcMoveTo(rectSt, 90)
-        path.arcTo(rectSt, 90, 180)
+        # build link body
+        path.arcMoveTo(rectSt, 90);  path.arcTo(rectSt, 90, 180)
         path.lineTo(self.length, self.radius)
-        path.arcMoveTo(rectEn, 270)
-        path.arcTo(rectEn, 270, 180)
+        path.arcMoveTo(rectEn, 270); path.arcTo(rectEn, 270, 180)
         path.lineTo(0, -self.radius)
-        if self.pen is not None:
-            painter.setPen(self.pen)  # Red color pen
-        if self.label_pen is None:
-            self.label_pen = qtg.QPen(qtg.QColor('red'))
-        if self.brush is not None:
-            painter.setBrush(self.brush)
-        painter.drawPath(path)
-        # draw some circles at the end points
-        pivotStart = qtc.QRectF(-self.radius / 6, -self.radius / 6, self.radius / 3, self.radius / 3)
-        pivotEnd = qtc.QRectF(self.length - self.radius / 6, -self.radius / 6, self.radius / 3, self.radius / 3)
-        painter.drawEllipse(pivotStart)
-        painter.drawEllipse(pivotEnd)
 
-        # redefine the bounding rectangle
-        self.rect = qtc.QRectF(-self.radius, -self.radius, self.length + 2 * self.radius, 2 * self.radius)
-        # painter.drawRect(self.rect)
+        # draw body
+        if self.pen:   painter.setPen(self.pen)
+        if self.brush: painter.setBrush(self.brush)
+        painter.drawPath(path)
+
+        # draw pivot circles
+        pivotSt = qtc.QRectF(-self.radius/6, -self.radius/6,
+                             self.radius/3, self.radius/3)
+        pivotEn = qtc.QRectF(self.length - self.radius/6, -self.radius/6,
+                             self.radius/3, self.radius/3)
+        painter.drawEllipse(pivotSt)
+        painter.drawEllipse(pivotEn)
+
+        # update bounding rect for picking
+        self.rect = qtc.QRectF(-self.radius, -self.radius,
+                               self.length + 2*self.radius, 2*self.radius)
+
+        # draw label
         painter.setBrush(qtg.QBrush(qtc.Qt.black))
         painter.setPen(self.label_pen)
         painter.setFont(qtg.QFont("Times", self.radius))
         painter.drawText(self.rect, qtc.Qt.AlignCenter, self.name)
-        # Now perform transformations on the object.  Note: transformations are by matrix multiplication [newPt]=[T][R][oldPt]
-        # in 2D [R] is the 2x2 rotation matrix.  Hence [R][oldPt] is (2x2)*(2x1)=(2x1)=[rotatedPt]
-        # [T] is the 2x2 translation matrix.  Hence [T][rotatedPt] = [newPt]
+
+        # apply transformation: rotate then translate
         self.transform.reset()
         self.transform.translate(self.stPt.x(), self.stPt.y())
-        self.transform.rotate(-angLink)
+        self.transform.rotate(-angDeg)
         self.setTransform(self.transform)
-        self.transform.reset()
-        stTT = self.name + "\nstart: ({:0.3f}, {:0.3f})\nend:({:0.3f},{:0.3f})\nlength: {:0.3f}\nangle: {:0.3f}".format(
-            self.stPt.x(), self.stPt.y(), self.enPt.x(), self.enPt.y(), self.length, self.angle * 180 / math.pi)
-        self.setToolTip(stTT)
-        # brPen=qtg.QPen()
-        # brPen.setWidth(0)
-        # painter.setPen(brPen)
-        # painter.drawRect(self.boundingRect())
+
+        # update tooltip
+        info = (f"{self.name}\n"
+                f"start: ({self.stPt.x():.3f},{self.stPt.y():.3f})\n"
+                f"end:   ({self.enPt.x():.3f},{self.enPt.y():.3f})\n"
+                f"length: {self.length:.3f}\n"
+                f"angle:  {self.angle*180/math.pi:.3f}")
+        self.setToolTip(info)
+
 class RigidPivotPoint(qtw.QGraphicsItem):
     def __init__(self, ptX=0, ptY=0, pivotHeight=10, pivotWidth=10, parent=None, pen=None, brush=None, rotation=0,
                  name='RigidPivotPoint', label_pen=None):
