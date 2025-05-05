@@ -410,9 +410,9 @@ class LinearSpring(qtw.QGraphicsItem):
         self.transformation.reset()
         font = painter.font()
         font.setPointSize(6)
-        font = qtg.QFont("Arial", 12, qtg.QFont.Bold)
+        font = qtg.QFont("Arial", 12, qtg.QFont.Bold)#added to make F and k visible
         painter.setFont(font)
-        painter.setPen(qtg.QColor("black"))
+        painter.setPen(qtg.QColor("black")) # added to make F and k visible
         text = "k = {:0.1f} N/m".format(self.k)
         text += ", F = {:0.2f} N".format(self.force)
         fm = qtg.QFontMetrics(painter.font())
@@ -984,3 +984,5 @@ class FourBarLinkage_Controller():
 
 if __name__ ==  "__main__":
     pass
+
+#helped by chatGPT, deepseek, Miguel and Kaleb
